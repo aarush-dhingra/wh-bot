@@ -1,0 +1,17 @@
+R_DEF: Internal format may change without notice
+local
+color colorAccent
+color colorPrimary
+color colorPrimaryDark
+drawable ic_launcher_background
+drawable ic_launcher_foreground
+id enableNotificationButton
+id enableSwitch
+id serverUrlInput
+id statusText
+id testButton
+layout activity_main
+mipmap ic_launcher
+mipmap ic_launcher_round
+string app_name
+xml network_security_config
