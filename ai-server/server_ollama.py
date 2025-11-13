@@ -6,6 +6,11 @@ from flask_cors import CORS
 import requests
 import logging
 from datetime import datetime
+import importlib
+import sys
+from pathlib import Path
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,23 +20,52 @@ CORS(app)
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 
+# Import prompt configuration
+import prompt_config
+
+class PromptConfigReloader(FileSystemEventHandler):
+    """Watches prompt_config.py and reloads it when changed"""
+    def __init__(self):
+        self.last_reload = datetime.now()
+
+    def on_modified(self, event):
+        if event.src_path.endswith('prompt_config.py'):
+            # Debounce - only reload if 1 second has passed
+            if (datetime.now() - self.last_reload).seconds < 1:
+                return
+
+            try:
+                logger.info("🔄 Prompt configuration changed, reloading...")
+                importlib.reload(prompt_config)
+                self.last_reload = datetime.now()
+                logger.info("✓ Prompt configuration reloaded successfully!")
+            except Exception as e:
+                logger.error(f"Failed to reload prompt config: {e}")
+
+# Start file watcher
+observer = Observer()
+config_dir = Path(__file__).parent
+observer.schedule(PromptConfigReloader(), str(config_dir), recursive=False)
+observer.start()
+logger.info(f"📁 Watching {config_dir / 'prompt_config.py'} for changes...")
+
 def generate_response_ollama(message, sender):
     """Generate response using Ollama"""
     try:
-        prompt = f"""You are replying to a WhatsApp message from {sender}. Give ONLY your direct response - nothing else.Before starting each reply tag yourself as "A_V:" and begin the message that you are typing after the ":"  Keep it brief (1-2 sentences maximum). Do NOT continue the conversation or generate additional dialogue.
+        # Use the current prompt template from config
+        prompt = prompt_config.PROMPT_TEMPLATE.format(sender=sender, message=message)
 
-Message: {message}
-
-Your response:"""
+        # Add sender-specific stop token
+        stop_tokens = prompt_config.GENERATION_OPTIONS.get("stop", []).copy()
+        stop_tokens.append(sender + ":")
 
         payload = {
-            "model": "phi3",  # or "llama3.2", "mistral", etc.
+            "model": prompt_config.OLLAMA_MODEL,
             "prompt": prompt,
             "stream": False,
             "options": {
-                "temperature": 0.7,
-                "num_predict": 50,  # Reduced from 100 to prevent long responses
-                "stop": ["\n\n", "Message:", "Response:", sender + ":"]  # Stop generation at these tokens
+                **prompt_config.GENERATION_OPTIONS,
+                "stop": stop_tokens
             }
         }
 
@@ -89,5 +123,9 @@ def test():
     return jsonify({'message': 'Ollama server is running!'})
 
 if __name__ == '__main__':
-    logger.info("Starting Ollama-based server...")
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    logger.info("Starting Ollama-based server with auto-reload...")
+    try:
+        app.run(host='0.0.0.0', port=5000, debug=False)
+    finally:
+        observer.stop()
+        observer.join()

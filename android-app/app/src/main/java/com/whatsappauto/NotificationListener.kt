@@ -72,7 +72,13 @@ class NotificationListener : NotificationListenerService() {
 
         // Skip messages sent by "You" (our own replies) to prevent infinite loop
         if (title.equals("You", ignoreCase = true)) {
-            Log.d(TAG, "Skipping our own message")
+            Log.d(TAG, "Skipping our own message (detected 'You')")
+            return
+        }
+
+        // Skip messages that contain AI response tag (our bot's replies)
+        if (text.startsWith("A_V:", ignoreCase = true) || text.contains("A_V:", ignoreCase = true)) {
+            Log.d(TAG, "Skipping AI-generated message (contains A_V: tag)")
             return
         }
 
